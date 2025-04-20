@@ -3,9 +3,8 @@ import numpy as np
 import time
 import os
 import sys
-from pydub import AudioSegment
-from pydub.silence import detect_nonsilent
 import subprocess
+import signal
 
 class SpeechRecognizer:
     def __init__(self, model_size="base"):
@@ -21,7 +20,8 @@ class SpeechRecognizer:
         # Audio recording parameters
         self.CHANNELS = 1
         self.RATE = 16000
-        self.RECORD_SECONDS = 10
+        self.RECORD_DURATION = 5  # seconds (fixed recording duration)
+        self.temp_file = "temp_recording.wav"
         
         try:
             # Test the audio setup immediately
@@ -44,8 +44,8 @@ class SpeechRecognizer:
         """Test the audio setup to catch permission issues early."""
         try:
             # Test recording for a very short duration
-            self.record_audio(duration=0.1)
-            print("\nAudio setup successful!")
+            self.record_audio(0.1)
+            print("Audio setup successful!")
             
         except Exception as e:
             if "PermissionError" in str(e):
@@ -57,28 +57,24 @@ class SpeechRecognizer:
                 print("5. Restart your Terminal/IDE after granting permissions")
                 sys.exit(1)
             raise e
-
+    
     def record_audio(self, duration=None):
         """
         Record audio from microphone using ffmpeg.
         
         Args:
-            duration (float, optional): Duration to record in seconds. Defaults to self.RECORD_SECONDS.
+            duration (float, optional): Duration to record in seconds. If None, uses default duration.
         
         Returns:
             str: Path to the recorded audio file
         """
+        if duration is None:
+            duration = self.RECORD_DURATION
+            
         try:
-            if duration is None:
-                duration = self.RECORD_SECONDS
-                
-            print("\nPreparing to record...")
             print("Recording... Speak now!")
             
-            # Create temporary file path
-            temp_file = "temp_recording.wav"
-            
-            # Use ffmpeg to record audio
+            # Use ffmpeg to record audio with minimal output
             command = [
                 'ffmpeg',
                 '-y',  # Overwrite output file if it exists
@@ -88,20 +84,18 @@ class SpeechRecognizer:
                 '-acodec', 'pcm_s16le',  # PCM 16-bit little-endian
                 '-ac', str(self.CHANNELS),  # Number of channels
                 '-ar', str(self.RATE),  # Sample rate
-                temp_file
+                '-loglevel', 'error',  # Only show errors
+                self.temp_file
             ]
             
-            # Run ffmpeg command
-            subprocess.run(command, check=True, capture_output=True)
+            # Run ffmpeg command and suppress output
+            subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
-            print("Recording finished.")
-            return temp_file
+            return self.temp_file
             
         except subprocess.CalledProcessError as e:
             print(f"\nError recording audio: {e}")
             print("Please check your microphone permissions and connection.")
-            if e.stderr:
-                print(f"Error details: {e.stderr.decode()}")
             return None
         except Exception as e:
             print(f"\nError recording audio: {e}")
@@ -116,21 +110,20 @@ class SpeechRecognizer:
             str: Recognized text or None if recognition fails
         """
         try:
-            # Record audio
+            # Record audio for a fixed duration
             audio_file = self.record_audio()
             if not audio_file:
                 return None
             
-            print("Processing speech with Whisper...")
             # Transcribe with Whisper
-            result = self.model.transcribe(audio_file)
+            result = self.model.transcribe(audio_file, language="en")
             text = result["text"].strip()
             
             # Clean up temporary file
-            os.remove(audio_file)
+            self._cleanup_temp_file()
             
             if text:
-                print(f"Recognized: {text}")
+                print(f"You said: {text}")
                 return text
             else:
                 print("No speech detected")
@@ -138,11 +131,22 @@ class SpeechRecognizer:
                 
         except Exception as e:
             print(f"Error: {e}")
+            # Make sure to clean up even if there's an error
+            self._cleanup_temp_file()
             return None
+    
+    def _cleanup_temp_file(self):
+        """
+        Clean up the temporary recording file.
+        """
+        if os.path.exists(self.temp_file):
+            try:
+                os.remove(self.temp_file)
+            except Exception as e:
+                print(f"Warning: Could not delete temporary file: {e}")
     
     def __del__(self):
         """
         Cleanup when the object is destroyed.
         """
-        if self.audio:
-            self.audio.terminate() 
+        self._cleanup_temp_file() 

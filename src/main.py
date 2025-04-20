@@ -24,6 +24,10 @@ def main():
                 # Process with LLM
                 response = llm_processor.process_text(text)
                 
+                # Print the response before speaking
+                print("\nAssistant: " + response)
+                print("-" * 50)
+                
                 # Speak the response
                 tts.speak(response)
             
