@@ -1,6 +1,6 @@
 # AI Voice Assistant
 
-A real-time voice assistant that converts speech to text using OpenAI's Whisper, processes it using Llama 3 via Ollama, and responds with synthesized speech.
+A voice assistant that uses Whisper for speech recognition, Llama 3 (via Ollama) for processing, and Google Text-to-Speech for responses.
 
 ## Features
 
@@ -12,31 +12,53 @@ A real-time voice assistant that converts speech to text using OpenAI's Whisper,
 ## Prerequisites
 
 - Python 3.8 or higher
-- Conda package manager
-- Ollama installed and running locally
-- Llama 3 model pulled in Ollama
+- ffmpeg (for audio recording and playback)
+- Ollama with the llama3 model installed
 
-## Installation
+## Setup
 
 1. Clone this repository
-2. Create and activate the conda environment:
    ```bash
-   conda env create -f environment.yml
-   conda activate voice-assistant
+   git clone <repository-url>
+   cd <repository-directory>
    ```
-3. Make sure Ollama is running and Llama 3 is installed:
+
+2. Install dependencies
    ```bash
-   ollama pull llama2
+   pip install -r requirements.txt
    ```
+
+3. Install ffmpeg
+   - **macOS**: `brew install ffmpeg`
+   - **Ubuntu/Debian**: `sudo apt-get install ffmpeg`
+   - **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
+
+4. Install and run Ollama
+   - Follow the instructions at [ollama.ai](https://ollama.ai) to install Ollama
+   - Run Ollama: `ollama serve`
+   - In a separate terminal, pull the llama3 model: `ollama pull llama3`
 
 ## Usage
 
-Run the main script:
+Run the voice assistant:
 ```bash
-python src/main.py
+python src/run.py
 ```
 
-Press Ctrl+C to exit the program.
+- The assistant will listen for your voice
+- Speak clearly into your microphone
+- The assistant will process your request and respond verbally
+
+## Permissions
+
+- **Microphone**: The application needs permission to access your microphone
+- If you encounter permission issues, follow the instructions provided when the error occurs
+
+## Troubleshooting
+
+- **Microphone not working**: Check your system permissions for microphone access
+- **Ollama connection error**: Make sure Ollama is running with `ollama serve`
+- **TTS errors**: Check your internet connection as Google TTS requires internet access
 
 ## Project Structure
 
