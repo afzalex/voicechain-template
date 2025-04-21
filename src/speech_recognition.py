@@ -79,7 +79,7 @@ class SpeechRecognizer:
                 'ffmpeg',
                 '-y',  # Overwrite output file if it exists
                 '-f', 'avfoundation',  # Use avfoundation for macOS
-                '-i', ':0',  # Use default input device
+                '-i', 'none:1',  # Use MacBook Air Microphone (index 1)
                 '-t', str(duration),  # Duration in seconds
                 '-acodec', 'pcm_s16le',  # PCM 16-bit little-endian
                 '-ac', str(self.CHANNELS),  # Number of channels
