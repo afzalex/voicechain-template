@@ -1,86 +1,70 @@
-# AI Voice Assistant
+# Voice Assistant
 
-A voice assistant that uses Whisper for speech recognition, Llama 3 (via Ollama) for processing, and Google Text-to-Speech for responses.
+A simple voice assistant that uses speech recognition and text-to-speech to interact with users.
 
 ## Features
 
-- Real-time speech-to-text conversion using Whisper
-- Natural language processing using Llama 3
-- Text-to-speech response
-- Simple and intuitive interface
+- Speech recognition using OpenAI's Whisper model (local)
+- Text-to-speech for voice output
+- Automatic fallback to text input when voice recognition fails
+- Basic conversation capabilities using Ollama LLM
+- Runs on macOS with native audio recording support
 
-## Prerequisites
+## Installation
 
-- Python 3.8 or higher
-- ffmpeg (for audio recording and playback)
-- Ollama with the llama3 model installed
+1. Clone this repository:
+```bash
+git clone https://github.com/yourusername/voice-assistant.git
+cd voice-assistant
+```
 
-## Setup
+2. Create a virtual environment and activate it:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
 
-1. Clone this repository
-   ```bash
-   git clone <repository-url>
-   cd <repository-directory>
-   ```
+3. Install the required packages:
+```bash
+pip install -r requirements.txt
+```
 
-2. Install dependencies
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Install ffmpeg
-   - **macOS**: `brew install ffmpeg`
-   - **Ubuntu/Debian**: `sudo apt-get install ffmpeg`
-   - **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
-
-4. Install and run Ollama
-   - Follow the instructions at [ollama.ai](https://ollama.ai) to install Ollama
-   - Run Ollama: `ollama serve`
-   - In a separate terminal, pull the llama3 model: `ollama pull llama3`
+4. Install and run Ollama:
+```bash
+# Download from https://ollama.com/
+ollama serve
+ollama pull llama3
+```
 
 ## Usage
 
 Run the voice assistant:
 ```bash
-python src/run.py
+python src/main.py
 ```
 
-- The assistant will listen for your voice
-- Speak clearly into your microphone
-- The assistant will process your request and respond verbally
-
-## Permissions
-
-- **Microphone**: The application needs permission to access your microphone
-- If you encounter permission issues, follow the instructions provided when the error occurs
-
-## Troubleshooting
-
-- **Microphone not working**: Check your system permissions for microphone access
-- **Ollama connection error**: Make sure Ollama is running with `ollama serve`
-- **TTS errors**: Check your internet connection as Google TTS requires internet access
-
-## Project Structure
-
-```
-.
-├── README.md
-├── requirements.txt
-├── environment.yml
-├── src/
-│   ├── __init__.py
-│   ├── main.py
-│   ├── speech_recognition.py
-│   ├── llm_processor.py
-│   └── text_to_speech.py
+For troubleshooting, you can run in debug mode:
+```bash
+python src/main.py --debug
 ```
 
-## Notes
+The voice assistant will:
+1. Listen for your voice input using Whisper for local speech recognition
+2. Fall back to text input if speech recognition fails
+3. Process your request using the Ollama LLM
+4. Respond with voice and text
 
-- The speech recognition uses Whisper's "base" model by default. You can change this in the `SpeechRecognizer` class initialization.
-- The first run will download the Whisper model, which might take some time depending on your internet connection.
-- Audio recording is set to 10 seconds by default. You can adjust this in the `RECORD_SECONDS` parameter in the `SpeechRecognizer` class.
+Commands:
+- Say "hello" or "hi" to get a greeting
+- Say "bye", "exit", or "quit" to end the conversation
+- Ask questions to get responses from the LLM
+
+## Requirements
+
+- Python 3.8 or higher
+- macOS (for native audio recording, other platforms may require additional setup)
+- Ollama running locally with the llama3 model
 
 ## License
 
-MIT License 
+MIT

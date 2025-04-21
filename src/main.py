@@ -1,43 +1,40 @@
-import time
-from speech_recognition import SpeechRecognizer
-from llm_processor import LLMProcessor
-from text_to_speech import TextToSpeech
+#!/usr/bin/env python3
+import os
+import sys
+import argparse
+from dotenv import load_dotenv
+from voice_agent import VoiceAgent
+import logging
 
 def main():
-    print("Initializing AI Voice Assistant...")
+    """Run the voice agent application with WebRTC VAD"""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Run the voice agent application")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    args = parser.parse_args()
     
-    # Initialize components
-    speech_recognizer = SpeechRecognizer()
-    llm_processor = LLMProcessor()
-    tts = TextToSpeech()
+    # Configure logging based on debug mode
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG, 
+                           format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+    else:
+        logging.basicConfig(level=logging.INFO, 
+                           format='%(asctime)s [%(levelname)s] %(message)s')
     
-    print("\nAI Voice Assistant is ready!")
-    print("Press Ctrl+C to exit")
-    print("-" * 50)
+    # Load environment variables from .env file if it exists
+    load_dotenv()
     
     try:
-        while True:
-            # Listen for speech
-            text = speech_recognizer.listen()
-            
-            if text:
-                # Process with LLM
-                response = llm_processor.process_text(text)
-                
-                # Print the response before speaking
-                print("\nAssistant: " + response)
-                print("-" * 50)
-                
-                # Speak the response
-                tts.speak(response)
-            
-            # Small delay to prevent CPU overuse
-            time.sleep(0.1)
-            
+        # Create and run the voice agent
+        agent = VoiceAgent()
+        agent.run()
     except KeyboardInterrupt:
-        print("\nGoodbye!")
+        print("\nExiting voice agent...")
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"Error running voice agent: {e}")
+        return 1
+    
+    return 0
 
 if __name__ == "__main__":
-    main() 
+    sys.exit(main()) 

@@ -1,3 +1,3 @@
 """
-AI Voice Assistant package
+LangChain Voice Assistant package
 """ 
