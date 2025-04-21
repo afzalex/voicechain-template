@@ -213,6 +213,12 @@ class VoiceAgent:
         self.speech_recognizer = SpeechRecognizer(vad_mode=3, whisper_model="base")
         self.text_to_speech = TextToSpeech()
         
+        # Available actions
+        self.actions = {
+            "cancel_appointment": self._cancel_appointment,
+            "exit": self._exit_conversation
+        }
+        
         # Initialize LangChain components
         try:
             self._init_langchain()
@@ -244,28 +250,68 @@ class VoiceAgent:
                 input_variables=["history", "input"],
                 template=template
             )
+
+            # Setup intent detection prompt
+            self.intent_prompt = PromptTemplate(
+                input_variables=["input"],
+                template="""
+                Your task is to determine if this user request requires a specific action.
+                
+                Available actions:
+                - cancel_appointment: When the user wants to cancel an appointment, meeting, or reservation
+                - exit: When the user wants to end the conversation, say goodbye, or quit
+                - none: When no specific action is required, just respond normally
+                
+                User request: {input}
+                
+                Return only the action name without explanation. For example: "cancel_appointment", "exit", or "none".
+                Action:"""
+            )
             
-            # # Setup conversation chain with warning suppression
-            # import warnings
-            # with warnings.catch_warnings():
-            #     warnings.filterwarnings("ignore", category=DeprecationWarning)
-            #     self.conversation = ConversationChain(
-            #         llm=self.llm,
-            #         memory=self.memory,
-            #         prompt=self.prompt,
-            #         verbose=False
-            #     )
+            # Setup conversation chain with warning suppression
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=DeprecationWarning)
+                self.conversation = ConversationChain(
+                    llm=self.llm,
+                    memory=self.memory,
+                    prompt=self.prompt,
+                    verbose=False
+                )
         except Exception as e:
             logger.error(f"Error connecting to Ollama at {ollama_host}: {e}")
             logger.error("Make sure Ollama is running with: ollama serve")
             logger.error("And ensure llama3 model is available with: ollama pull llama3")
             raise
     
-    def is_exit_command(self, text):
-        """Check if the text is an exit command"""
-        if not text:
-            return False
-        return re.fullmatch(r"\s*(exit|quit|bye|goodbye)\s*\.?\s*", text, re.IGNORECASE) is not None
+    def _detect_intent(self, text):
+        """Use the LLM to detect the intent of the user's request"""
+        try:
+            response = self.llm.invoke(self.intent_prompt.format(input=text)).strip().lower()
+            logger.debug(f"Intent detected: '{response}'")
+            
+            # Validate the response
+            if response in self.actions or response == "none":
+                return response
+            else:
+                logger.warning(f"Invalid intent detected: '{response}', defaulting to 'none'")
+                return "none"
+                
+        except Exception as e:
+            logger.error(f"Error in intent detection: {e}")
+            return "none"
+    
+    def _cancel_appointment(self, text):
+        """Dummy function to simulate appointment cancellation"""
+        logger.info("🗑️ DUMMY FUNCTION: Would have cancelled appointment here")
+        # In a real implementation, this would connect to a calendar service
+        # or database to actually cancel the appointment
+        return "I've cancelled your appointment. You will receive a confirmation email shortly."
+    
+    def _exit_conversation(self, text):
+        """Handle exit command"""
+        logger.info("👋 User has requested to exit the conversation")
+        return "exit_signal"  # Special return value to signal exit
     
     def listen(self):
         """Listen for user input through voice"""
@@ -276,10 +322,19 @@ class VoiceAgent:
         self.text_to_speech.speak(text)
     
     def process(self, text):
-        """Process user input and generate a response using LangChain"""
+        """Process user input and generate a response"""
         if not text:
             return "I didn't catch that. Could you please repeat?"
         
+        # First, detect the intent
+        intent = self._detect_intent(text)
+        
+        # If an action is required, execute it
+        if intent in self.actions:
+            logger.info(f"Executing action: {intent}")
+            return self.actions[intent](text)
+            
+        # Otherwise, use the conversation chain for normal responses
         try:
             response = self.conversation.predict(input=text)
             return response
@@ -303,15 +358,16 @@ class VoiceAgent:
                 user_input = self.listen()
                 
                 if user_input:
-                    # Check for exit command
-                    if self.is_exit_command(user_input):
-                        logger.info("Goodbye!")
-                        self.speak("Goodbye!")
-                        break
-                    
                     # Process and respond
                     logger.info("Processing...")
                     response = self.process(user_input)
+                    
+                    # Check for exit signal
+                    if response == "exit_signal":
+                        logger.info("Goodbye!")
+                        self.speak("Goodbye!")
+                        break
+                        
                     logger.info(f"Assistant: {response}")
                     self.speak(response)
                 
