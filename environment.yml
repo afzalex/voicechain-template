@@ -1,4 +1,4 @@
-name: voice-assistant
+name: voice-assistant-py310
 channels:
   - conda-forge
   - defaults

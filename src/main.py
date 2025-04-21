@@ -3,7 +3,7 @@ import os
 import sys
 import argparse
 from dotenv import load_dotenv
-from voice_agent import VoiceAgent
+from voice_assistant import VoiceAgent
 import logging
 
 def main():

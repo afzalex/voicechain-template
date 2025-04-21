@@ -1,70 +1,84 @@
 # Voice Assistant
 
-A simple voice assistant that uses speech recognition and text-to-speech to interact with users.
+A modular voice assistant with speech recognition, text-to-speech, and appointment scheduling capabilities.
 
 ## Features
 
-- Speech recognition using OpenAI's Whisper model (local)
-- Text-to-speech for voice output
-- Automatic fallback to text input when voice recognition fails
-- Basic conversation capabilities using Ollama LLM
-- Runs on macOS with native audio recording support
+- **Speech Recognition** using Whisper and WebRTC VAD
+- **Text-to-Speech** with platform-specific optimizations
+- **Appointment Management**:
+  - Schedule appointments with date, time, and title
+  - Cancel appointments
+  - Infer appointment titles and normalize date references
 
 ## Installation
 
-1. Clone this repository:
-```bash
-git clone https://github.com/yourusername/voice-assistant.git
-cd voice-assistant
-```
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd voice-assistant
+   ```
 
-2. Create a virtual environment and activate it:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+2. Set up the conda environment:
+   ```bash
+   conda env create -f environment.yml
+   conda activate voice-assistant-py310
+   ```
 
-3. Install the required packages:
-```bash
-pip install -r requirements.txt
-```
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-4. Install and run Ollama:
-```bash
-# Download from https://ollama.com/
-ollama serve
-ollama pull llama3
-```
+4. Make sure you have Ollama running:
+   ```bash
+   ollama serve
+   ollama pull llama3
+   ```
 
 ## Usage
 
 Run the voice assistant:
+
 ```bash
 python src/main.py
 ```
 
-For troubleshooting, you can run in debug mode:
+For debug mode:
+
 ```bash
 python src/main.py --debug
 ```
 
-The voice assistant will:
-1. Listen for your voice input using Whisper for local speech recognition
-2. Fall back to text input if speech recognition fails
-3. Process your request using the Ollama LLM
-4. Respond with voice and text
+## Project Structure
 
-Commands:
-- Say "hello" or "hi" to get a greeting
-- Say "bye", "exit", or "quit" to end the conversation
-- Ask questions to get responses from the LLM
+```
+src/
+├── main.py                 # Entry point
+├── voice_assistant/        # Main package
+│   ├── __init__.py
+│   ├── core/               # Core components
+│   │   ├── __init__.py
+│   │   ├── agent.py        # Main voice agent
+│   │   ├── appointment_actions.py  # Appointment functionality
+│   │   ├── speech_recognition.py   # Speech recognition
+│   │   └── text_to_speech.py       # Text-to-speech
+│   └── utils/              # Utilities
+│       ├── __init__.py
+│       └── date_utils.py   # Date handling utilities
+```
 
-## Requirements
+## Voice Commands
 
-- Python 3.8 or higher
-- macOS (for native audio recording, other platforms may require additional setup)
-- Ollama running locally with the llama3 model
+- **Schedule an appointment**: "Schedule a doctor's appointment tomorrow at 2 PM"
+- **Cancel an appointment**: "Cancel my dentist appointment on Friday"
+- **Ask questions**: "What's the weather like today?"
+- **Exit**: "Goodbye", "Exit", or "Quit"
+
+## Environment Variables
+
+- `OLLAMA_HOST`: URL for the Ollama service (default: http://localhost:11434)
 
 ## License
 
-MIT
+[MIT License](LICENSE)
