@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+# Activate conda environment 
+if command -v conda &> /dev/null; then
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+    if conda env list | grep -q voice-assistant-py310; then
+        conda activate voice-assistant-py310
+    else
+        echo "Error: voice-assistant-py310 conda environment not found"
+        exit 1
+    fi
+fi
+
+# Run the application with any arguments passed to this script
+python "$SCRIPT_DIR/src/main.py" "$@" 

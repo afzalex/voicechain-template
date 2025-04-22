@@ -38,6 +38,8 @@ A modular voice assistant with speech recognition, text-to-speech, and appointme
 
 ## Usage
 
+### Development Mode
+
 Run the voice assistant:
 
 ```bash
@@ -49,6 +51,33 @@ For debug mode:
 ```bash
 python src/main.py --debug
 ```
+
+### Production Mode
+
+For production use, we provide a convenient executable script:
+
+```bash
+# Make the script executable (one-time setup)
+chmod +x voice-assistant
+
+# Run the application
+./voice-assistant
+```
+
+You can also place the script in your PATH for global access:
+
+```bash
+# Copy to a directory in your PATH (requires admin permission)
+sudo cp voice-assistant /usr/local/bin/
+
+# Then run from anywhere
+voice-assistant
+```
+
+The script automatically:
+- Activates the correct conda environment
+- Runs the application with proper paths
+- Passes any command-line arguments to the application
 
 ## Project Structure
 

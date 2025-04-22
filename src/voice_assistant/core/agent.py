@@ -2,10 +2,10 @@
 import os
 import logging
 import warnings
-from langchain.chains import ConversationChain
+from langchain_core.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
 from langchain_community.llms import Ollama
-from langchain.prompts import PromptTemplate
+from langchain.chains import ConversationChain
 
 from .speech_recognition import SpeechRecognizer
 from .text_to_speech import TextToSpeech
