@@ -15,6 +15,7 @@ class AppointmentActions:
             llm: Language model for inference
         """
         self.llm = llm
+        logger.debug("🔍 AppointmentActions initialized with LLM")
     
     def cancel_appointment(self, text):
         """Simulate appointment cancellation and extract details.
@@ -91,7 +92,8 @@ class AppointmentActions:
         Returns:
             str: Response confirming scheduling or requesting more information
         """
-        logger.info("📅 DUMMY FUNCTION: Would schedule an appointment here")
+        logger.info("📅 Processing appointment scheduling request")
+        logger.debug(f"🔍 Appointment request text: \"{text}\"")
         
         # Use the LLM to extract appointment details
         extraction_prompt = PromptTemplate(
@@ -99,22 +101,26 @@ class AppointmentActions:
             template="""
             Extract appointment scheduling details from this request: {input}
             
-            For date references, preserve the exact words used (like "tomorrow", "next Tuesday", "in 3 days").
+            For DATES, recognize both relative dates ("tomorrow", "next Tuesday", "in 3 days") and specific dates 
+            (like "October 2nd", "2nd of October", "Oct 2", "2 October", "10/02", etc.)
             
-            Return the details in this format:
+            For TIMES, recognize all formats (like "3 PM", "3:00", "3 o'clock", "15:00", "three in the afternoon", etc.)
+            
+            Return the details in this exact format - you MUST include all three lines:
             TITLE: [appointment title, or suggest an appropriate title if none is explicitly mentioned]
-            DATE: [relative or specific date as mentioned]
-            TIME: [appointment time]
+            DATE: [the date mentioned in the request, exactly as spoken]
+            TIME: [the time mentioned in the request, exactly as spoken]
             
-            For DATE and TIME, only return actual dates and times. If these aren't specified, simply write "unspecified".
-            Date and time are required for scheduling an appointment.
+            If no date or time is mentioned at all, write "unspecified" for that field.
+            Consider variations in how people express dates and times.
             """
         )
         
         try:
             # Extract details from the request
+            logger.debug("🔍 Extracting appointment details from text using LLM")
             details_response = self.llm.invoke(extraction_prompt.format(input=text))
-            logger.info(f"Extracted appointment details: {details_response}")
+            logger.info(f"📋 Extracted appointment details: {details_response}")
             
             # Parse the details
             title = None
@@ -129,6 +135,8 @@ class AppointmentActions:
                 elif line.startswith("TIME:"):
                     time = line[5:].strip()
             
+            logger.debug(f"🔍 Parsed fields - Title: '{title}', Date: '{date}', Time: '{time}'")
+            
             # Check if date and time are valid
             invalid_terms = ["unspecified", "not specified", "no specific", "none", "not mentioned"]
             
@@ -136,16 +144,20 @@ class AppointmentActions:
             missing_fields = []
             if not date or any(term in date.lower() for term in invalid_terms):
                 missing_fields.append("date")
+                logger.debug(f"🔍 Missing required field: date")
             if not time or any(term in time.lower() for term in invalid_terms):
                 missing_fields.append("time")
+                logger.debug(f"🔍 Missing required field: time")
             
             # Handle missing required fields
             if missing_fields:
                 fields_str = ", ".join(missing_fields)
+                logger.info(f"⚠️ Cannot schedule: missing {fields_str}")
                 return f"I need {fields_str} to schedule your appointment. Please provide this information."
             
             # Normalize relative date references to actual dates
             normalized_date = normalize_date_func(date)
+            logger.debug(f"🔍 Normalized date: '{date}' → '{normalized_date}'")
             
             # If title is missing or unclear, set a default
             if not title or title == "unspecified" or title == "[appointment title]" or "suggest" in title.lower():
@@ -161,18 +173,20 @@ class AppointmentActions:
                 )
                 
                 try:
+                    logger.debug("🔍 Inferring appointment title")
                     inferred_title = self.llm.invoke(infer_title_prompt.format(input=text)).strip()
                     title = inferred_title if inferred_title else "General Appointment"
-                    logger.info(f"Inferred appointment title: {title}")
+                    logger.info(f"📝 Inferred appointment title: {title}")
                 except Exception as e:
-                    logger.error(f"Error inferring title: {e}")
+                    logger.error(f"❌ Error inferring title: {e}")
                     title = "General Appointment"
             
             # In a real implementation, this would connect to a calendar service
             # and schedule the appointment with the extracted details
+            logger.info(f"✅ Successfully scheduled: {title} on {normalized_date} at {time}")
             
             return f"I've scheduled your {title} for {normalized_date} at {time}. You will receive a confirmation email shortly."
                 
         except Exception as e:
-            logger.error(f"Error extracting appointment details: {e}")
+            logger.error(f"❌ Error extracting appointment details: {e}")
             return "I couldn't schedule your appointment. Please make sure to include at least a date and time." 

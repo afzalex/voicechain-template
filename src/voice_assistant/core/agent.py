@@ -20,12 +20,20 @@ class VoiceAgent:
     
     def __init__(self):
         """Initialize the voice agent with required components."""
-        # Initialize components
-        self.speech_recognizer = SpeechRecognizer(vad_mode=3, whisper_model="base")
+        logger.info("="*60)
+        logger.info("📱 VOICE ASSISTANT INITIALIZATION")
+        logger.info("="*60)
+        
+        # Initialize text-to-speech first for better UX
         self.text_to_speech = TextToSpeech()
+        
+        # Initialize speech recognition
+        logger.info("🎤 Initializing speech recognition...")
+        self.speech_recognizer = SpeechRecognizer(vad_mode=3, whisper_model="base")
         
         # Initialize LangChain components
         try:
+            logger.info("🧠 Initializing language model...")
             self._init_langchain()
             
             # Initialize appointment actions
@@ -38,9 +46,9 @@ class VoiceAgent:
                 "exit": self._exit_conversation
             }
             
-            logger.info("Voice Agent initialized!")
+            logger.info("✅ Voice Assistant fully initialized!")
         except Exception as e:
-            logger.error(f"Error initializing Voice Agent: {e}")
+            logger.error(f"❌ Failed to initialize Voice Agent: {e}")
             raise
     
     def _init_langchain(self):
@@ -55,7 +63,9 @@ class VoiceAgent:
             
             # Setup prompt template
             template = """
-            You are a helpful AI assistant. You provide concise, helpful answers to questions.
+            You are a helpful appointment scheduling assistant. You provide concise, helpful answers to questions 
+            about appointments and scheduling. You can help schedule appointments, manage calendars, and provide 
+            information about upcoming events.
             
             Current conversation:
             {history}
@@ -71,13 +81,20 @@ class VoiceAgent:
             self.intent_prompt = PromptTemplate(
                 input_variables=["input"],
                 template="""
-                Your task is to determine if this user request requires a specific action.
+                Your task is to determine if this user request requires a specific appointment-related action.
                 
                 Available actions:
-                - cancel_appointment: When the user wants to cancel an appointment, meeting, or reservation
-                - schedule_appointment: When the user wants to schedule or book a new appointment
+                - cancel_appointment: When the user wants to cancel an appointment, meeting, reservation, or any scheduled event
+                - schedule_appointment: When the user wants to schedule, book, or create a new appointment or meeting
                 - exit: When the user wants to end the conversation, say goodbye, or quit
-                - none: When no specific action is required, just respond normally
+                - none: When no specific action is required, just respond normally to the query
+                
+                Examples:
+                - "Schedule a doctor's appointment for tomorrow at 2pm" → schedule_appointment
+                - "Cancel my dentist appointment on Friday" → cancel_appointment
+                - "I need to book a meeting with my team" → schedule_appointment
+                - "What time is my appointment?" → none
+                - "Goodbye" → exit
                 
                 User request: {input}
                 
@@ -111,17 +128,17 @@ class VoiceAgent:
         """
         try:
             response = self.llm.invoke(self.intent_prompt.format(input=text)).strip().lower()
-            logger.debug(f"Intent detected: '{response}'")
+            logger.debug(f"🧠 Intent detected: '{response}'")
             
             # Validate the response
             if response in self.actions or response == "none":
                 return response
             else:
-                logger.warning(f"Invalid intent detected: '{response}', defaulting to 'none'")
+                logger.warning(f"⚠️ Invalid intent detected: '{response}', defaulting to 'none'")
                 return "none"
                 
         except Exception as e:
-            logger.error(f"Error in intent detection: {e}")
+            logger.error(f"❌ Error in intent detection: {e}")
             return "none"
     
     def _cancel_appointment(self, text):
@@ -204,37 +221,54 @@ class VoiceAgent:
     
     def run(self):
         """Run the assistant in a loop."""
-        logger.info("="*50)
-        logger.info("Voice Assistant is ready!")
+        logger.info("="*60)
+        logger.info("🤖 VOICE ASSISTANT READY")
+        logger.info("="*60)
         logger.info("Simply speak to interact with the assistant")
         logger.info("Say 'exit', 'quit', or 'goodbye' to end the session")
-        logger.info("="*50)
+        logger.info("="*60)
         
-        self.speak("Voice assistant is ready. You can speak to me now.")
+        logger.info("🚀 Voice Assistant is ready!")
+        
+        # Provide a proper greeting that introduces appointment capabilities
+        greeting = (
+            "Hello! I'm your appointment scheduling assistant. How may I help you today?"
+        )
+        
+        logger.info(f"🤖 Assistant: \"{greeting}\"")
+        self.speak(greeting)
         
         while True:
             try:
+                # Show listening status
+                logger.info("🎧 Listening...")
+                
                 # Listen for speech input
                 user_input = self.listen()
                 
                 if user_input:
+                    # Show the recognized text and processing status
+                    logger.info(f"👤 User: \"{user_input}\"")
+                    logger.info("🤖 Processing...")
+                    
                     # Process and respond
-                    logger.info("Processing...")
                     response = self.process(user_input)
                     
                     # Check for exit signal
                     if response == "exit_signal":
-                        logger.info("Goodbye!")
-                        self.speak("Goodbye!")
+                        farewell = "Thank you for using the appointment assistant. Goodbye!"
+                        logger.info(f"👋 {farewell}")
+                        self.speak(farewell)
                         break
-                        
-                    logger.info(f"Assistant: {response}")
+                    
+                    # Show and speak the response
+                    logger.info(f"🤖 Assistant: \"{response}\"")
                     self.speak(response)
                 
             except KeyboardInterrupt:
-                logger.info("Goodbye!")
+                logger.info("👋 Goodbye! (Interrupted by user)")
                 self.speak("Goodbye!")
                 break
             except Exception as e:
-                logger.error(f"An error occurred: {str(e)}")
+                logger.error(f"❌ Error: {str(e)}")
                 continue 

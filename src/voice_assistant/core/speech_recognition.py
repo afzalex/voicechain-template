@@ -7,76 +7,61 @@ import struct
 import platform
 import webrtcvad
 import logging
+import time
 
 # Get logger
 logger = logging.getLogger("voice-assistant")
 
 class SpeechRecognizer:
     """Speech recognition with voice activity detection using WebRTC VAD and Whisper."""
-    
+
     def __init__(self, vad_mode=3, sample_rate=16000, whisper_model="tiny"):
-        """Initialize speech recognizer with WebRTC VAD and Whisper.
+        """Initialize the speech recognizer.
         
         Args:
-            vad_mode (int): WebRTC VAD aggressiveness (0-3)
-            sample_rate (int): Audio sample rate
-            whisper_model (str): Whisper model size ("tiny", "base", "small", "medium", "large")
+            vad_mode: WebRTC VAD aggressiveness (0-3)
+            sample_rate: Audio sample rate
+            whisper_model: Whisper model size
         """
         self._temp_file = "temp_audio.wav"
         self._is_macos = platform.system() == 'Darwin'
         self._samplerate = sample_rate
         self._blocksize = 320  # 20ms at 16kHz
         self._channels = 1
-        
-        # WebRTC VAD settings
+
+        # Speech detection settings
         self._vad = webrtcvad.Vad(vad_mode)
-        self._silence_limit = 30  # ~6 seconds
-        self._required_speaking_frames = 5
-        self._reset_silence_on_new_speech = 3
+        self._min_speech_frames = 5  # Need this many consecutive speech frames to start
         
-        # Load Whisper model for speech recognition
-        logger.info(f"Loading Whisper model '{whisper_model}'...")
+        # Continuous silence needed to end recording (in seconds)
+        self._end_silence_sec = 4.0
+        self._frames_per_second = self._samplerate / self._blocksize
+        self._end_silence_frames = int(self._end_silence_sec * self._frames_per_second)
+        
+        # Maximum recording duration (in seconds)
+        self._max_record_sec = 60.0
+        self._max_frames = int(self._max_record_sec * self._frames_per_second)
+        
+        logger.debug("🔍 SpeechRecognizer initialized:")
+        logger.debug(f"🔍 VAD mode: {vad_mode}, Sample rate: {sample_rate}")
+        logger.debug(f"🔍 End silence: {self._end_silence_sec}s ({self._end_silence_frames} frames)")
+        logger.debug(f"🔍 Max recording: {self._max_record_sec}s ({self._max_frames} frames)")
+
+        # Load Whisper model
+        logger.info(f"🎤 Loading Whisper model '{whisper_model}'...")
         try:
             self._whisper_model = whisper.load_model(whisper_model)
-            logger.info("Whisper model loaded successfully")
+            logger.info("✅ Whisper model loaded successfully")
         except Exception as e:
-            logger.error(f"Error loading Whisper model: {e}")
-            logger.error("Voice recognition will not be available")
+            logger.error(f"❌ Error loading Whisper model: {e}")
             self._whisper_model = None
-    
-    def _cleanup_temp_file(self):
-        """Remove temporary audio file if it exists."""
-        if os.path.exists(self._temp_file):
-            try:
-                os.remove(self._temp_file)
-            except Exception as e:
-                logger.error(f"Error cleaning up temp file: {e}")
-                
-    def __del__(self):
-        """Clean up resources when object is destroyed."""
-        self._cleanup_temp_file()
-    
-    def _is_loud_enough(self, block, threshold=0.05):
-        """Check if the audio block is loud enough to be real speech.
-        
-        Args:
-            block (numpy.ndarray): Audio block data
-            threshold (float): Volume threshold
-            
-        Returns:
-            bool: True if the audio is loud enough
-        """
+
+    def _is_loud_enough(self, block, threshold=0.01):
+        """Check if audio block is loud enough to be considered for speech detection."""
         return np.abs(block).mean() > threshold
-    
+
     def _is_speech(self, block):
-        """Check if VAD thinks the user is speaking.
-        
-        Args:
-            block (numpy.ndarray): Audio block data
-            
-        Returns:
-            bool: True if speech is detected
-        """
+        """Use WebRTC VAD to check if block contains speech."""
         try:
             int16_block = np.int16(block.flatten() * 32767)
             pcm_bytes = struct.pack(f"{len(int16_block)}h", *int16_block)
@@ -84,63 +69,104 @@ class SpeechRecognizer:
                 return False
             return self._vad.is_speech(pcm_bytes, sample_rate=self._samplerate)
         except Exception as e:
-            logger.error(f"VAD error: {e}")
+            logger.error(f"❌ VAD error: {e}")
             return False
-    
-    def listen(self):
-        """Record audio until silence and transcribe it.
-        
-        Returns:
-            str or None: Transcribed text or None if no speech detected
-        """
-        logger.info("🎙️ Listening... Speak now.")
-        audio_chunks = []
-        silence_count = 0
-        speaking = False
-        speaking_frames = 0
 
-        with sd.InputStream(samplerate=self._samplerate, 
-                           channels=self._channels, 
-                           dtype='float32', 
+    def listen(self):
+        """Record audio until silence and transcribe it."""
+        logger.info("🎙️ Listening... Speak now")
+        
+        audio_chunks = []      # All audio chunks
+        consecutive_speech = 0 # Count of consecutive speech frames
+        consecutive_silence = 0 # Count of consecutive silence frames
+        is_recording = False    # Whether we've started recording speech
+        total_frames = 0        # Total frames processed
+        total_speech_frames = 0 # Total speech frames detected
+        log_interval = 150      # How often to log status (in frames)
+        
+        with sd.InputStream(samplerate=self._samplerate,
+                           channels=self._channels,
+                           dtype='float32',
                            blocksize=self._blocksize) as stream:
             try:
-                while True:
+                # Main recording loop
+                while total_frames < self._max_frames:
+                    total_frames += 1
+                    
+                    # Read audio block
                     block, _ = stream.read(self._blocksize)
                     audio_chunks.append(block.copy())
-
-                    if self._is_loud_enough(block) and self._is_speech(block):
-                        speaking_frames += 1
-                        if speaking:
-                            silence_count = max(0, silence_count - self._reset_silence_on_new_speech)
-                        if speaking_frames >= self._required_speaking_frames and not speaking:
-                            speaking = True
-                            silence_count = 0
-                            logger.info("✅ Speech started")
-                    elif speaking:
-                        silence_count += 1
-
-                    if speaking and silence_count > self._silence_limit:
-                        logger.info("🛑 Speech ended")
+                    
+                    # Detect speech in this block
+                    is_speech_block = self._is_loud_enough(block) and self._is_speech(block)
+                    
+                    # Update speech/silence counters
+                    if is_speech_block:
+                        consecutive_speech += 1
+                        consecutive_silence = 0
+                        if is_recording:
+                            total_speech_frames += 1
+                    else:
+                        consecutive_speech = 0
+                        if is_recording:
+                            consecutive_silence += 1
+                    
+                    # Start recording if we detect enough consecutive speech
+                    if not is_recording and consecutive_speech >= self._min_speech_frames:
+                        is_recording = True
+                        consecutive_silence = 0
+                        total_speech_frames = consecutive_speech
+                        logger.info("🗣️ Speech detected")
+                    
+                    # Log status periodically
+                    if total_frames % log_interval == 0:
+                        if is_recording:
+                            logger.debug(f"🔍 Recording: frame {total_frames}, speech frames: {total_speech_frames}, " +
+                                        f"silence: {consecutive_silence}/{self._end_silence_frames}")
+                        else:
+                            logger.debug(f"🔍 Waiting: frame {total_frames}, consecutive speech: {consecutive_speech}/{self._min_speech_frames}")
+                    
+                    # Show countdown during silence
+                    if is_recording and consecutive_silence > 0 and consecutive_silence % 50 == 0:
+                        sec_remaining = (self._end_silence_frames - consecutive_silence) / self._frames_per_second
+                        logger.debug(f"⏱️ Waiting for speech to resume... {sec_remaining:.1f}s remaining")
+                    
+                    # Stop if we have enough continuous silence after speech was detected
+                    if is_recording and consecutive_silence >= self._end_silence_frames:
+                        logger.info("⏹️ End of speech detected")
                         break
+                
+                # Handle maximum recording time
+                if total_frames >= self._max_frames:
+                    logger.info("⏱️ Maximum recording time reached")
+            
             except Exception as e:
-                logger.error(f"Error recording audio: {e}")
+                logger.error(f"❌ Error during recording: {e}")
                 return None
-
-        # Process the recorded audio
-        if len(audio_chunks) > 0 and speaking:
+        
+        # Process recorded audio if we detected speech
+        if is_recording and len(audio_chunks) > 0:
             audio_data = np.concatenate(audio_chunks, axis=0).flatten()
-            # Transcribe with Whisper
+            audio_duration = len(audio_data) / self._samplerate
+            logger.debug(f"🔍 Processing {audio_duration:.2f}s of audio with {total_speech_frames} speech frames")
+            
             if self._whisper_model:
                 try:
-                    logger.info("🔊 Transcribing...")
+                    logger.info("🔄 Transcribing audio...")
                     result = self._whisper_model.transcribe(audio_data, language='en', fp16=False)
                     text = result['text'].strip()
                     if text:
-                        logger.info(f"📝 You said: {text}")
+                        logger.info(f"📝 Transcribed: \"{text}\"")
                         return text
                     else:
-                        logger.info("📝 No speech detected")
+                        logger.info("❓ No speech content in recording")
+                        return None
                 except Exception as e:
-                    logger.error(f"Error transcribing speech: {e}")
-        
-        return None 
+                    logger.error(f"❌ Error transcribing speech: {e}")
+                    return None
+            else:
+                logger.error("❌ Whisper model not available")
+                return None
+        else:
+            logger.debug("⌛ No speech detected")
+            return None

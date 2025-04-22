@@ -25,7 +25,7 @@ required_speaking_frames = 5
 reset_silence_on_new_speech = 3  # reset silence counter if speech resumes quickly
 
 # Check if block is loud enough to be real speech
-def is_loud_enough(block, threshold=0.05):
+def is_loud_enough(block, threshold=0.01):
     return np.abs(block).mean() > threshold
 
 # Check if VAD thinks user is speaking
