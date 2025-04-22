@@ -56,7 +56,7 @@ class SpeechRecognizer:
             logger.error(f"❌ Error loading Whisper model: {e}")
             self._whisper_model = None
 
-    def _is_loud_enough(self, block, threshold=0.01):
+    def _is_loud_enough(self, block, threshold=0.02):
         """Check if audio block is loud enough to be considered for speech detection."""
         return np.abs(block).mean() > threshold
 

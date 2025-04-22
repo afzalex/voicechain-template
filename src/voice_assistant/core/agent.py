@@ -3,9 +3,10 @@ import os
 import logging
 import warnings
 from langchain_core.prompts import PromptTemplate
-from langchain.memory import ConversationBufferMemory
-from langchain_community.llms import Ollama
-from langchain.chains import ConversationChain
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+from langchain_ollama import OllamaLLM
+from langchain_core.messages import AIMessage, HumanMessage
 
 from .speech_recognition import SpeechRecognizer
 from .text_to_speech import TextToSpeech
@@ -56,10 +57,12 @@ class VoiceAgent:
         try:
             # Try to get the host from environment variable
             ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-            self.llm = Ollama(model="llama3", base_url=ollama_host)
+            
+            # Initialize the LLM with the modern API
+            self.llm = OllamaLLM(model="llama3", base_url=ollama_host)
             
             # Setup conversation memory
-            self.memory = ConversationBufferMemory()
+            self.chat_history = []
             
             # Setup prompt template
             template = """
@@ -102,20 +105,23 @@ class VoiceAgent:
                 Action:"""
             )
             
-            # Setup conversation chain with warning suppression
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=DeprecationWarning)
-                self.conversation = ConversationChain(
-                    llm=self.llm,
-                    memory=self.memory,
-                    prompt=self.prompt,
-                    verbose=False
-                )
+            # Setup conversation chain using the modern API
+            self.conversation = (
+                {"history": lambda x: self._get_chat_history(), "input": RunnablePassthrough()}
+                | self.prompt
+                | self.llm
+                | StrOutputParser()
+            )
+            
         except Exception as e:
             logger.error(f"Error connecting to Ollama at {ollama_host}: {e}")
             logger.error("Make sure Ollama is running with: ollama serve")
             logger.error("And ensure llama3 model is available with: ollama pull llama3")
             raise
+    
+    def _get_chat_history(self):
+        """Get formatted chat history."""
+        return "\n".join([f"{msg['role']}: {msg['content']}" for msg in self.chat_history[-10:]])
     
     def _detect_intent(self, text):
         """Use the LLM to detect the intent of the user's request.
@@ -213,7 +219,15 @@ class VoiceAgent:
             
         # Otherwise, use the conversation chain for normal responses
         try:
-            response = self.conversation.predict(input=text)
+            # Add the user message to history
+            self.chat_history.append({"role": "Human", "content": text})
+            
+            # Generate response using the new API
+            response = self.conversation.invoke(text)
+            
+            # Add the assistant response to history
+            self.chat_history.append({"role": "AI", "content": response})
+            
             return response
         except Exception as e:
             logger.error(f"Error processing with LangChain: {e}")

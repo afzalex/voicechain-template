@@ -11,6 +11,7 @@ openai-whisper>=20231117
 langchain>=0.3.23
 langchain-community>=0.3.7
 langchain-core>=0.3.54
+langchain-ollama>=0.3.2
 pygame>=2.5.0
 ollama>=0.1.0
 sounddevice>=0.4.6

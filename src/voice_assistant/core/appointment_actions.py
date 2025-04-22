@@ -1,6 +1,6 @@
 """Appointment management functionality for Voice Assistant."""
 import logging
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 # Get logger
 logger = logging.getLogger("voice-assistant")
