@@ -1,0 +1,8 @@
+Extract appointment details from this request: {input}
+
+Return the details in this format:
+TITLE: [appointment title, or "unspecified" if not mentioned]
+DATE: [appointment date, or "unspecified" if not mentioned]
+TIME: [appointment time, or "unspecified" if not mentioned]
+
+If multiple appointments are mentioned, focus on the one most likely being cancelled. 

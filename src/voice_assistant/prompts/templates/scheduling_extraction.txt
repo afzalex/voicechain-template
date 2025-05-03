@@ -1,0 +1,14 @@
+Extract appointment scheduling details from this request: {input}
+
+For DATES, recognize both relative dates ("tomorrow", "next Tuesday", "in 3 days") and specific dates 
+(like "October 2nd", "2nd of October", "Oct 2", "2 October", "10/02", etc.)
+
+For TIMES, recognize all formats (like "3 PM", "3:00", "3 o'clock", "15:00", "three in the afternoon", etc.)
+
+Return the details in this exact format - you MUST include all three lines:
+TITLE: [appointment title, or suggest an appropriate title if none is explicitly mentioned]
+DATE: [the date mentioned in the request, exactly as spoken]
+TIME: [the time mentioned in the request, exactly as spoken]
+
+If no date or time is mentioned at all, write "unspecified" for that field.
+Consider variations in how people express dates and times. 

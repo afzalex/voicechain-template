@@ -1,0 +1,6 @@
+{
+    "welcome": "Hello! I'm your appointment scheduling assistant. How may I help you today?",
+    "farewell": "Thank you for using the appointment assistant. Goodbye!",
+    "error": "I'm having trouble processing your request.",
+    "repeat": "I didn't catch that. Could you please repeat?"
+} 

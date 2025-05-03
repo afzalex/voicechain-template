@@ -1,13 +1,20 @@
 """Main Voice Assistant Agent that coordinates speech, TTS, and other components."""
-import os
 import logging
-import warnings
+from typing import Optional, Dict, Callable
+
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_ollama import OllamaLLM
-from langchain_core.messages import AIMessage, HumanMessage
 
+from ..config import AssistantConfig, load_config
+from ..interfaces import (
+    SpeechRecognizerInterface,
+    TextToSpeechInterface,
+    LLMInterface,
+    ActionHandlerInterface
+)
+from ..prompts.prompts import PromptTemplates
 from .speech_recognition import SpeechRecognizer
 from .text_to_speech import TextToSpeech
 from .appointment_actions import AppointmentActions
@@ -19,124 +26,113 @@ logger = logging.getLogger("voice-assistant")
 class VoiceAgent:
     """Main voice assistant agent that coordinates speech recognition and text-to-speech."""
     
-    def __init__(self):
-        """Initialize the voice agent with required components."""
+    def __init__(self, config: Optional[AssistantConfig] = None):
+        """Initialize the voice agent with required components.
+        
+        Args:
+            config (Optional[AssistantConfig]): Configuration object. If None, loads from environment.
+        """
+        logger.debug("Initializing VoiceAgent...")
+        
+        self.config = config or load_config()
+        logger.debug("Configuration loaded")
+        logger.debug(f"Config: {self.config}")
+        
+        logger.debug("Loading prompt templates...")
+        self.prompts = PromptTemplates()
+        logger.debug("Prompt templates loaded")
+        
         logger.info("="*60)
         logger.info("📱 VOICE ASSISTANT INITIALIZATION")
         logger.info("="*60)
         
+        # Initialize components
+        logger.debug("Initializing components...")
+        self._init_components()
+        logger.debug("Components initialized")
+        
+        # Setup conversation chain
+        logger.debug("Setting up conversation chain...")
+        self._setup_conversation_chain()
+        logger.debug("Conversation chain setup complete")
+        
+        logger.info("✅ Voice Assistant fully initialized!")
+    
+    def _init_components(self):
+        """Initialize all required components."""
+        logger.debug("Initializing text-to-speech...")
         # Initialize text-to-speech first for better UX
-        self.text_to_speech = TextToSpeech()
+        self.text_to_speech = TextToSpeech(
+            model_name=self.config.tts.model_name,
+            speaker=self.config.tts.speaker
+        )
+        logger.debug("Text-to-speech initialized")
         
         # Initialize speech recognition
         logger.info("🎤 Initializing speech recognition...")
-        self.speech_recognizer = SpeechRecognizer(vad_mode=3, whisper_model="base")
+        self.speech_recognizer = SpeechRecognizer(
+            vad_mode=self.config.speech.vad_mode,
+            sample_rate=self.config.speech.sample_rate,
+            whisper_model=self.config.speech.whisper_model
+        )
+        logger.debug("Speech recognition initialized")
         
-        # Initialize LangChain components
-        try:
-            logger.info("🧠 Initializing language model...")
-            self._init_langchain()
-            
-            # Initialize appointment actions
-            self.appointment_actions = AppointmentActions(self.llm)
-            
-            # Available actions
-            self.actions = {
-                "cancel_appointment": self._cancel_appointment,
-                "schedule_appointment": self._schedule_appointment,
-                "exit": self._exit_conversation
-            }
-            
-            logger.info("✅ Voice Assistant fully initialized!")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize Voice Agent: {e}")
-            raise
+        # Initialize LLM
+        logger.info("🧠 Initializing language model...")
+        self.llm = OllamaLLM(
+            model=self.config.llm.model,
+            base_url=self.config.llm.base_url
+        )
+        logger.debug("Language model initialized")
+        
+        # Initialize appointment actions
+        logger.debug("Initializing appointment actions...")
+        self.appointment_actions = AppointmentActions(self.llm)
+        logger.debug("Appointment actions initialized")
+        
+        # Setup available actions
+        logger.debug("Setting up available actions...")
+        self.actions: Dict[str, Callable] = {
+            "cancel_appointment": self._cancel_appointment,
+            "schedule_appointment": self._schedule_appointment,
+            "exit": self._exit_conversation
+        }
+        logger.debug("Actions setup complete")
     
-    def _init_langchain(self):
-        """Initialize LangChain components for conversation and intent detection."""
-        try:
-            # Try to get the host from environment variable
-            ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-            
-            # Initialize the LLM with the modern API
-            self.llm = OllamaLLM(model="llama3", base_url=ollama_host)
-            
-            # Setup conversation memory
-            self.chat_history = []
-            
-            # Setup prompt template
-            template = """
-            You are a helpful appointment scheduling assistant. You provide concise, helpful answers to questions 
-            about appointments and scheduling. You can help schedule appointments, manage calendars, and provide 
-            information about upcoming events.
-            
-            Current conversation:
-            {history}
-            Human: {input}
-            AI:"""
-            
-            self.prompt = PromptTemplate(
-                input_variables=["history", "input"],
-                template=template
-            )
-
-            # Setup intent detection prompt
-            self.intent_prompt = PromptTemplate(
-                input_variables=["input"],
-                template="""
-                Your task is to determine if this user request requires a specific appointment-related action.
-                
-                Available actions:
-                - cancel_appointment: When the user wants to cancel an appointment, meeting, reservation, or any scheduled event
-                - schedule_appointment: When the user wants to schedule, book, or create a new appointment or meeting
-                - exit: When the user wants to end the conversation, say goodbye, or quit
-                - none: When no specific action is required, just respond normally to the query
-                
-                Examples:
-                - "Schedule a doctor's appointment for tomorrow at 2pm" → schedule_appointment
-                - "Cancel my dentist appointment on Friday" → cancel_appointment
-                - "I need to book a meeting with my team" → schedule_appointment
-                - "What time is my appointment?" → none
-                - "Goodbye" → exit
-                
-                User request: {input}
-                
-                Return only the action name without explanation. For example: "cancel_appointment", "schedule_appointment", "exit", or "none".
-                Action:"""
-            )
-            
-            # Setup conversation chain using the modern API
-            self.conversation = (
-                {"history": lambda x: self._get_chat_history(), "input": RunnablePassthrough()}
-                | self.prompt
-                | self.llm
-                | StrOutputParser()
-            )
-            
-        except Exception as e:
-            logger.error(f"Error connecting to Ollama at {ollama_host}: {e}")
-            logger.error("Make sure Ollama is running with: ollama serve")
-            logger.error("And ensure llama3 model is available with: ollama pull llama3")
-            raise
+    def _setup_conversation_chain(self):
+        """Setup the conversation chain with LangChain."""
+        # Setup conversation memory
+        self.chat_history = []
+        
+        # Setup prompt templates
+        self.conversation_prompt = PromptTemplate(
+            input_variables=["history", "input"],
+            template=self.prompts.conversation
+        )
+        
+        self.intent_prompt = PromptTemplate(
+            input_variables=["input"],
+            template=self.prompts.intent_detection
+        )
+        
+        # Setup conversation chain
+        self.conversation = (
+            {"history": lambda x: self._get_chat_history(), "input": RunnablePassthrough()}
+            | self.conversation_prompt
+            | self.llm
+            | StrOutputParser()
+        )
     
-    def _get_chat_history(self):
+    def _get_chat_history(self) -> str:
         """Get formatted chat history."""
-        return "\n".join([f"{msg['role']}: {msg['content']}" for msg in self.chat_history[-10:]])
+        return "\n".join([f"{msg['role']}: {msg['content']}" for msg in self.chat_history[-self.config.max_history_length:]])
     
-    def _detect_intent(self, text):
-        """Use the LLM to detect the intent of the user's request.
-        
-        Args:
-            text (str): User input text
-            
-        Returns:
-            str: Detected intent name
-        """
+    def _detect_intent(self, text: str) -> str:
+        """Detect the intent of the user's request."""
         try:
             response = self.llm.invoke(self.intent_prompt.format(input=text)).strip().lower()
             logger.debug(f"🧠 Intent detected: '{response}'")
             
-            # Validate the response
             if response in self.actions or response == "none":
                 return response
             else:
@@ -147,93 +143,51 @@ class VoiceAgent:
             logger.error(f"❌ Error in intent detection: {e}")
             return "none"
     
-    def _cancel_appointment(self, text):
-        """Handle appointment cancellation intent.
-        
-        Args:
-            text (str): User's cancellation request
-            
-        Returns:
-            str: Response to the user
-        """
+    def _cancel_appointment(self, text: str) -> str:
+        """Handle appointment cancellation intent."""
         return self.appointment_actions.cancel_appointment(text)
     
-    def _schedule_appointment(self, text):
-        """Handle appointment scheduling intent.
-        
-        Args:
-            text (str): User's scheduling request
-            
-        Returns:
-            str: Response to the user
-        """
-        return self.appointment_actions.schedule_appointment(text, normalize_date)
+    def _schedule_appointment(self, text: str) -> str:
+        """Handle appointment scheduling intent."""
+        return self.appointment_actions.schedule_appointment(text)
     
-    def _exit_conversation(self, text):
-        """Handle exit command.
-        
-        Args:
-            text (str): User's exit request
-            
-        Returns:
-            str: Special exit signal
-        """
+    def _exit_conversation(self, text: str) -> str:
+        """Handle exit command."""
         logger.info("👋 User has requested to exit the conversation")
-        return "exit_signal"  # Special return value to signal exit
+        return "exit_signal"
     
-    def listen(self):
-        """Listen for user input through voice.
-        
-        Returns:
-            str or None: Transcribed user speech
-        """
+    def listen(self) -> Optional[str]:
+        """Listen for user input through voice."""
         return self.speech_recognizer.listen()
     
-    def speak(self, text):
-        """Speak the response.
-        
-        Args:
-            text (str): Text to speak
-        """
+    def speak(self, text: str) -> None:
+        """Speak the response."""
         self.text_to_speech.speak(text)
     
-    def process(self, text):
-        """Process user input and generate a response.
-        
-        Args:
-            text (str): User input text
-            
-        Returns:
-            str: Response to the user
-        """
+    def process(self, text: str) -> str:
+        """Process user input and generate a response."""
         if not text:
-            return "I didn't catch that. Could you please repeat?"
+            return self.prompts.greetings["repeat"]
         
-        # First, detect the intent
+        # Detect intent
         intent = self._detect_intent(text)
         
-        # If an action is required, execute it
+        # Execute action if required
         if intent in self.actions:
             logger.info(f"Executing action: {intent}")
             return self.actions[intent](text)
-            
-        # Otherwise, use the conversation chain for normal responses
+        
+        # Generate normal response
         try:
-            # Add the user message to history
             self.chat_history.append({"role": "Human", "content": text})
-            
-            # Generate response using the new API
             response = self.conversation.invoke(text)
-            
-            # Add the assistant response to history
             self.chat_history.append({"role": "AI", "content": response})
-            
             return response
         except Exception as e:
             logger.error(f"Error processing with LangChain: {e}")
-            return "I'm having trouble processing your request."
+            return self.prompts.greetings["error"]
     
-    def run(self):
+    def run(self) -> None:
         """Run the assistant in a loop."""
         logger.info("="*60)
         logger.info("🤖 VOICE ASSISTANT READY")
@@ -242,40 +196,25 @@ class VoiceAgent:
         logger.info("Say 'exit', 'quit', or 'goodbye' to end the session")
         logger.info("="*60)
         
-        logger.info("🚀 Voice Assistant is ready!")
-        
-        # Provide a proper greeting that introduces appointment capabilities
-        greeting = (
-            "Hello! I'm your appointment scheduling assistant. How may I help you today?"
-        )
-        
-        logger.info(f"🤖 Assistant: \"{greeting}\"")
-        self.speak(greeting)
+        logger.info(f"🤖 Assistant: \"{self.prompts.greetings['welcome']}\"")
+        self.speak(self.prompts.greetings["welcome"])
         
         while True:
             try:
-                # Show listening status
                 logger.info("🎧 Listening...")
-                
-                # Listen for speech input
                 user_input = self.listen()
                 
                 if user_input:
-                    # Show the recognized text and processing status
                     logger.info(f"👤 User: \"{user_input}\"")
                     logger.info("🤖 Processing...")
                     
-                    # Process and respond
                     response = self.process(user_input)
                     
-                    # Check for exit signal
                     if response == "exit_signal":
-                        farewell = "Thank you for using the appointment assistant. Goodbye!"
-                        logger.info(f"👋 {farewell}")
-                        self.speak(farewell)
+                        logger.info(f"👋 {self.prompts.greetings['farewell']}")
+                        self.speak(self.prompts.greetings["farewell"])
                         break
                     
-                    # Show and speak the response
                     logger.info(f"🤖 Assistant: \"{response}\"")
                     self.speak(response)
                 

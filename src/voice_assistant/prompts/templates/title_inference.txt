@@ -1,0 +1,4 @@
+Based on this appointment scheduling request: {input}
+
+Infer a single appropriate, brief title for this appointment (3 words maximum).
+Return only the title without any explanation or additional text. 

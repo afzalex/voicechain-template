@@ -29,12 +29,29 @@ class SpeechRecognizer:
         self._blocksize = 320  # 20ms at 16kHz
         self._channels = 1
 
+        # Find the default input device
+        try:
+            devices = sd.query_devices()
+            for i, dev in enumerate(devices):
+                if dev['max_input_channels'] > 0:  # This is an input device
+                    if 'MacBook Air Microphone' in dev['name']:
+                        self._device = i
+                        logger.info(f"🎤 Using input device: {dev['name']}")
+                        break
+            else:
+                # If MacBook Air Microphone not found, use default input device
+                self._device = sd.default.device[0]
+                logger.info(f"🎤 Using default input device: {devices[self._device]['name']}")
+        except Exception as e:
+            logger.error(f"❌ Error finding audio device: {e}")
+            self._device = None
+
         # Speech detection settings
         self._vad = webrtcvad.Vad(vad_mode)
-        self._min_speech_frames = 5  # Need this many consecutive speech frames to start
+        self._min_speech_frames = 3  # Reduced from 5 to 3 for faster detection
         
         # Continuous silence needed to end recording (in seconds)
-        self._end_silence_sec = 4.0
+        self._end_silence_sec = 2.0  # Reduced from 4.0 to 2.0 for faster response
         self._frames_per_second = self._samplerate / self._blocksize
         self._end_silence_frames = int(self._end_silence_sec * self._frames_per_second)
         
@@ -56,7 +73,7 @@ class SpeechRecognizer:
             logger.error(f"❌ Error loading Whisper model: {e}")
             self._whisper_model = None
 
-    def _is_loud_enough(self, block, threshold=0.02):
+    def _is_loud_enough(self, block, threshold=0.01):  # Reduced from 0.02 to 0.01
         """Check if audio block is loud enough to be considered for speech detection."""
         return np.abs(block).mean() > threshold
 
@@ -74,6 +91,10 @@ class SpeechRecognizer:
 
     def listen(self):
         """Record audio until silence and transcribe it."""
+        if self._device is None:
+            logger.error("❌ No audio input device available")
+            return None
+
         logger.info("🎙️ Listening... Speak now")
         
         audio_chunks = []      # All audio chunks
@@ -84,65 +105,77 @@ class SpeechRecognizer:
         total_speech_frames = 0 # Total speech frames detected
         log_interval = 150      # How often to log status (in frames)
         
-        with sd.InputStream(samplerate=self._samplerate,
-                           channels=self._channels,
-                           dtype='float32',
-                           blocksize=self._blocksize) as stream:
-            try:
-                # Main recording loop
-                while total_frames < self._max_frames:
-                    total_frames += 1
-                    
-                    # Read audio block
-                    block, _ = stream.read(self._blocksize)
-                    audio_chunks.append(block.copy())
-                    
-                    # Detect speech in this block
-                    is_speech_block = self._is_loud_enough(block) and self._is_speech(block)
-                    
-                    # Update speech/silence counters
-                    if is_speech_block:
-                        consecutive_speech += 1
-                        consecutive_silence = 0
-                        if is_recording:
-                            total_speech_frames += 1
-                    else:
-                        consecutive_speech = 0
-                        if is_recording:
-                            consecutive_silence += 1
-                    
-                    # Start recording if we detect enough consecutive speech
-                    if not is_recording and consecutive_speech >= self._min_speech_frames:
-                        is_recording = True
-                        consecutive_silence = 0
-                        total_speech_frames = consecutive_speech
-                        logger.info("🗣️ Speech detected")
-                    
-                    # Log status periodically
-                    if total_frames % log_interval == 0:
-                        if is_recording:
-                            logger.debug(f"🔍 Recording: frame {total_frames}, speech frames: {total_speech_frames}, " +
-                                        f"silence: {consecutive_silence}/{self._end_silence_frames}")
-                        else:
-                            logger.debug(f"🔍 Waiting: frame {total_frames}, consecutive speech: {consecutive_speech}/{self._min_speech_frames}")
-                    
-                    # Show countdown during silence
-                    if is_recording and consecutive_silence > 0 and consecutive_silence % 50 == 0:
-                        sec_remaining = (self._end_silence_frames - consecutive_silence) / self._frames_per_second
-                        logger.debug(f"⏱️ Waiting for speech to resume... {sec_remaining:.1f}s remaining")
-                    
-                    # Stop if we have enough continuous silence after speech was detected
-                    if is_recording and consecutive_silence >= self._end_silence_frames:
-                        logger.info("⏹️ End of speech detected")
-                        break
+        try:
+            with sd.InputStream(samplerate=self._samplerate,
+                               channels=self._channels,
+                               dtype='float32',
+                               blocksize=self._blocksize,
+                               device=self._device) as stream:
+                logger.debug("✅ Audio stream opened successfully")
                 
-                # Handle maximum recording time
-                if total_frames >= self._max_frames:
-                    logger.info("⏱️ Maximum recording time reached")
-            
-            except Exception as e:
-                logger.error(f"❌ Error during recording: {e}")
-                return None
+                try:
+                    # Main recording loop
+                    while total_frames < self._max_frames:
+                        total_frames += 1
+                        
+                        # Read audio block
+                        try:
+                            block, _ = stream.read(self._blocksize)
+                            audio_chunks.append(block.copy())
+                        except Exception as e:
+                            logger.error(f"❌ Error reading audio block: {e}")
+                            continue
+                        
+                        # Detect speech in this block
+                        is_speech_block = self._is_loud_enough(block) and self._is_speech(block)
+                        
+                        # Update speech/silence counters
+                        if is_speech_block:
+                            consecutive_speech += 1
+                            consecutive_silence = 0
+                            if is_recording:
+                                total_speech_frames += 1
+                        else:
+                            consecutive_speech = 0
+                            if is_recording:
+                                consecutive_silence += 1
+                        
+                        # Start recording if we detect enough consecutive speech
+                        if not is_recording and consecutive_speech >= self._min_speech_frames:
+                            is_recording = True
+                            consecutive_silence = 0
+                            total_speech_frames = consecutive_speech
+                            logger.info("🗣️ Speech detected")
+                        
+                        # Log status periodically
+                        if total_frames % log_interval == 0:
+                            if is_recording:
+                                logger.debug(f"🔍 Recording: frame {total_frames}, speech frames: {total_speech_frames}, " +
+                                            f"silence: {consecutive_silence}/{self._end_silence_frames}")
+                            else:
+                                logger.debug(f"🔍 Waiting: frame {total_frames}, consecutive speech: {consecutive_speech}/{self._min_speech_frames}")
+                        
+                        # Show countdown during silence
+                        if is_recording and consecutive_silence > 0 and consecutive_silence % 50 == 0:
+                            sec_remaining = (self._end_silence_frames - consecutive_silence) / self._frames_per_second
+                            logger.debug(f"⏱️ Waiting for speech to resume... {sec_remaining:.1f}s remaining")
+                        
+                        # Stop if we have enough continuous silence after speech was detected
+                        if is_recording and consecutive_silence >= self._end_silence_frames:
+                            logger.info("⏹️ End of speech detected")
+                            break
+                    
+                    # Handle maximum recording time
+                    if total_frames >= self._max_frames:
+                        logger.info("⏱️ Maximum recording time reached")
+                
+                except Exception as e:
+                    logger.error(f"❌ Error during recording: {e}")
+                    return None
+                
+        except Exception as e:
+            logger.error(f"❌ Error opening audio stream: {e}")
+            return None
         
         # Process recorded audio if we detected speech
         if is_recording and len(audio_chunks) > 0:

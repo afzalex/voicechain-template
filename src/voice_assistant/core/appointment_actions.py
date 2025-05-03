@@ -2,6 +2,9 @@
 import logging
 from langchain_core.prompts import PromptTemplate
 
+from ..prompts import PromptTemplates
+from ..exceptions import ActionHandlerError
+
 # Get logger
 logger = logging.getLogger("voice-assistant")
 
@@ -15,9 +18,10 @@ class AppointmentActions:
             llm: Language model for inference
         """
         self.llm = llm
+        self.prompts = PromptTemplates()
         logger.debug("🔍 AppointmentActions initialized with LLM")
     
-    def cancel_appointment(self, text):
+    def cancel_appointment(self, text: str) -> str:
         """Simulate appointment cancellation and extract details.
         
         Args:
@@ -26,25 +30,15 @@ class AppointmentActions:
         Returns:
             str: Response confirming cancellation
         """
-        logger.info("🗑️ DUMMY FUNCTION: Would have cancelled appointment here")
-        
-        # Use the LLM to extract appointment details from the text
-        extraction_prompt = PromptTemplate(
-            input_variables=["input"],
-            template="""
-            Extract appointment details from this request: {input}
-            
-            Return the details in this format:
-            TITLE: [appointment title, or "unspecified" if not mentioned]
-            DATE: [appointment date, or "unspecified" if not mentioned]
-            TIME: [appointment time, or "unspecified" if not mentioned]
-            
-            If multiple appointments are mentioned, focus on the one most likely being cancelled.
-            """
-        )
+        logger.info("🗑️ Processing appointment cancellation request")
         
         try:
             # Extract details from the request
+            extraction_prompt = PromptTemplate(
+                input_variables=["input"],
+                template=self.prompts.appointment_extraction
+            )
+            
             details_response = self.llm.invoke(extraction_prompt.format(input=text))
             logger.info(f"Extracted appointment details: {details_response}")
             
@@ -80,14 +74,13 @@ class AppointmentActions:
                 
         except Exception as e:
             logger.error(f"Error extracting appointment details: {e}")
-            return "I've cancelled your appointment. You will receive a confirmation email shortly."
+            raise ActionHandlerError("Failed to process appointment cancellation") from e
     
-    def schedule_appointment(self, text, normalize_date_func):
+    def schedule_appointment(self, text: str) -> str:
         """Schedule a new appointment with required date and time.
         
         Args:
             text (str): User's scheduling request
-            normalize_date_func: Function to normalize date references
             
         Returns:
             str: Response confirming scheduling or requesting more information
@@ -95,29 +88,13 @@ class AppointmentActions:
         logger.info("📅 Processing appointment scheduling request")
         logger.debug(f"🔍 Appointment request text: \"{text}\"")
         
-        # Use the LLM to extract appointment details
-        extraction_prompt = PromptTemplate(
-            input_variables=["input"],
-            template="""
-            Extract appointment scheduling details from this request: {input}
-            
-            For DATES, recognize both relative dates ("tomorrow", "next Tuesday", "in 3 days") and specific dates 
-            (like "October 2nd", "2nd of October", "Oct 2", "2 October", "10/02", etc.)
-            
-            For TIMES, recognize all formats (like "3 PM", "3:00", "3 o'clock", "15:00", "three in the afternoon", etc.)
-            
-            Return the details in this exact format - you MUST include all three lines:
-            TITLE: [appointment title, or suggest an appropriate title if none is explicitly mentioned]
-            DATE: [the date mentioned in the request, exactly as spoken]
-            TIME: [the time mentioned in the request, exactly as spoken]
-            
-            If no date or time is mentioned at all, write "unspecified" for that field.
-            Consider variations in how people express dates and times.
-            """
-        )
-        
         try:
             # Extract details from the request
+            extraction_prompt = PromptTemplate(
+                input_variables=["input"],
+                template=self.prompts.scheduling_extraction
+            )
+            
             logger.debug("🔍 Extracting appointment details from text using LLM")
             details_response = self.llm.invoke(extraction_prompt.format(input=text))
             logger.info(f"📋 Extracted appointment details: {details_response}")
@@ -155,21 +132,12 @@ class AppointmentActions:
                 logger.info(f"⚠️ Cannot schedule: missing {fields_str}")
                 return f"I need {fields_str} to schedule your appointment. Please provide this information."
             
-            # Normalize relative date references to actual dates
-            normalized_date = normalize_date_func(date)
-            logger.debug(f"🔍 Normalized date: '{date}' → '{normalized_date}'")
-            
             # If title is missing or unclear, set a default
             if not title or title == "unspecified" or title == "[appointment title]" or "suggest" in title.lower():
                 # Use LLM to infer an appropriate title
                 infer_title_prompt = PromptTemplate(
                     input_variables=["input"],
-                    template="""
-                    Based on this appointment scheduling request: {input}
-                    
-                    Infer a single appropriate, brief title for this appointment (3 words maximum).
-                    Return only the title without any explanation or additional text.
-                    """
+                    template=self.prompts.title_inference
                 )
                 
                 try:
@@ -183,10 +151,10 @@ class AppointmentActions:
             
             # In a real implementation, this would connect to a calendar service
             # and schedule the appointment with the extracted details
-            logger.info(f"✅ Successfully scheduled: {title} on {normalized_date} at {time}")
+            logger.info(f"✅ Successfully scheduled: {title} on {date} at {time}")
             
-            return f"I've scheduled your {title} for {normalized_date} at {time}. You will receive a confirmation email shortly."
+            return f"I've scheduled your {title} for {date} at {time}. You will receive a confirmation email shortly."
                 
         except Exception as e:
             logger.error(f"❌ Error extracting appointment details: {e}")
-            return "I couldn't schedule your appointment. Please make sure to include at least a date and time." 
+            raise ActionHandlerError("Failed to process appointment scheduling") from e 

@@ -1,0 +1,19 @@
+Your task is to determine if this user request requires a specific appointment-related action.
+
+Available actions:
+- cancel_appointment: When the user wants to cancel an appointment, meeting, reservation, or any scheduled event
+- schedule_appointment: When the user wants to schedule, book, or create a new appointment or meeting
+- exit: When the user wants to end the conversation, say goodbye, or quit
+- none: When no specific action is required, just respond normally to the query
+
+Examples:
+- "Schedule a doctor's appointment for tomorrow at 2pm" → schedule_appointment
+- "Cancel my dentist appointment on Friday" → cancel_appointment
+- "I need to book a meeting with my team" → schedule_appointment
+- "What time is my appointment?" → none
+- "Goodbye" → exit
+
+User request: {input}
+
+Return only the action name without explanation. For example: "cancel_appointment", "schedule_appointment", "exit", or "none".
+Action: 
